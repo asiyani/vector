@@ -19,15 +19,14 @@ fn utc_timestamp(timestamp: Option<i64>) -> Option<DateTime<Utc>> {
     })
 }
 
-pub(super) fn parse(packet: &str) -> Result<Vec<Metric>, ParserError> {
+pub(super) fn parse_text(packet: &str) -> Result<Vec<Metric>, ParserError> {
+    reparse_groups(prometheus_parser::group_text_metrics(packet)?)
+}
+
+fn reparse_groups(groups: Vec<MetricGroup>) -> Result<Vec<Metric>, ParserError> {
     let mut result = Vec::new();
 
-    for group in prometheus_parser::group_text_metrics(packet)? {
-        // just a header without measurements
-        if group.metrics.is_empty() {
-            continue;
-        }
-
+    for group in groups {
         match group.metrics {
             GroupKind::Counter(vec) => {
                 for metric in vec {
@@ -125,7 +124,7 @@ pub(super) fn parse(packet: &str) -> Result<Vec<Metric>, ParserError> {
 
 #[cfg(test)]
 mod test {
-    use super::parse;
+    use super::*;
     use crate::event::metric::{Metric, MetricKind, MetricValue};
     use chrono::{TimeZone, Utc};
     use pretty_assertions::assert_eq;
@@ -151,7 +150,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "uptime".into(),
                 MetricKind::Absolute,
@@ -167,7 +166,7 @@ mod test {
             # TYPE hidden counter
             "##;
 
-        assert_eq!(parse(exp), Ok(vec![]),);
+        assert_eq!(parse_text(exp), Ok(vec![]),);
     }
 
     #[test]
@@ -177,7 +176,7 @@ mod test {
             name{labelname="val1",basename="basevalue"} NaN
             "##;
 
-        match parse(exp).unwrap()[0].data.value {
+        match parse_text(exp).unwrap()[0].data.value {
             MetricValue::Counter { value } => {
                 assert!(value.is_nan());
             }
@@ -200,7 +199,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "name".into(),
@@ -256,7 +255,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "http_requests_total".into(),
@@ -299,7 +298,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "latency".into(),
                 MetricKind::Absolute,
@@ -315,7 +314,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "metric_without_timestamp_and_labels".into(),
                 MetricKind::Absolute,
@@ -331,7 +330,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "no_labels".into(),
                 MetricKind::Absolute,
@@ -347,7 +346,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "msdos_file_access_time_seconds".into(),
                 MetricKind::Absolute,
@@ -374,7 +373,7 @@ mod test {
             name{tag="}"} 0
             "##;
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "name".into(),
                 MetricKind::Absolute,
@@ -392,7 +391,7 @@ mod test {
             name{tag="a,b"} 0
             "##;
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "name".into(),
                 MetricKind::Absolute,
@@ -410,7 +409,7 @@ mod test {
             name{tag="\\n"} 0
             "##;
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "name".into(),
                 MetricKind::Absolute,
@@ -428,7 +427,7 @@ mod test {
             name{tag=" * "} 0
             "##;
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "name".into(),
                 MetricKind::Absolute,
@@ -445,7 +444,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "telemetry_scrape_size_bytes_count".into(),
                 MetricKind::Absolute,
@@ -468,7 +467,7 @@ mod test {
             telemetry_scrape_size_bytes_count{registry="default",content_type} 1890
             "##;
 
-        assert!(parse(exp).is_err());
+        assert!(parse_text(exp).is_err());
     }
 
     #[test]
@@ -477,7 +476,7 @@ mod test {
             telemetry_scrape_size_bytes_count{registry="default",content_type=} 1890
             "##;
 
-        assert!(parse(exp).is_err());
+        assert!(parse_text(exp).is_err());
     }
 
     #[test]
@@ -487,7 +486,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "something_weird".into(),
                 MetricKind::Absolute,
@@ -513,7 +512,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "latency".into(),
@@ -551,7 +550,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "uptime".into(),
@@ -579,7 +578,7 @@ mod test {
             latency{env="production"}
             "##;
 
-        assert!(parse(exp).is_err());
+        assert!(parse_text(exp).is_err());
     }
 
     #[test]
@@ -589,7 +588,7 @@ mod test {
             123.0
             "##;
 
-        assert!(parse(exp).is_err());
+        assert!(parse_text(exp).is_err());
     }
 
     #[test]
@@ -604,7 +603,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "uptime".into(),
@@ -646,7 +645,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![Metric::new(
                 "http_request_duration_seconds".into(),
                 MetricKind::Absolute,
@@ -708,7 +707,7 @@ mod test {
         "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "gitlab_runner_job_duration_seconds".into(), MetricKind::Absolute, MetricValue::AggregatedHistogram {
@@ -784,7 +783,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "rpc_duration_seconds".into(),
@@ -846,7 +845,7 @@ mod test {
             "##;
 
         assert_eq!(
-            parse(exp),
+            parse_text(exp),
             Ok(vec![
                 Metric::new(
                     "nginx_server_bytes".into(),
